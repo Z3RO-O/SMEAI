@@ -20,17 +20,11 @@ export function TopNav({
     <nav className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-7xl px-4 sm:px-6 lg:px-8">
       <div className="rounded-full border shadow-lg shadow-white/10 border-white/10 backdrop-blur-md bg-black/30">
         <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className={`size-10 rounded-lg backdrop-blur-sm border flex items-center justify-center ${
-              "bg-white/10 border-white/20"
-            }`}>
-              <Brain className={`size-6 text-white`} />
-            </div>
-            <div>
-              <h1 className={`text-xl font-bold text-white`}>
-                SMEAI
-              </h1>
-            </div>
+          <div className="flex items-center gap-2">
+            <Brain className={`size-6 text-white`} />
+            <h1 className={`text-xl font-bold text-white`}>
+              SMEAI
+            </h1>
           </div>
           
           <div className="flex items-center gap-3">
