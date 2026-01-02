@@ -11,11 +11,13 @@ SMEAI transforms your documents into an AI-powered subject matter expert. Upload
 
 **Key Features:**
 - 📄 **Document-Based RAG** — Upload PDFs, TXT, JSON, MD files
-- 🤖 **Gemini-Powered Responses** — Streaming AI answers using Google's Gemini Pro
+- 🤖 **Gemini-Powered Responses** — Streaming AI answers using Google's Gemini 2.5 Flash
+- 🔑 **Custom API Keys** — Use your own Gemini API key for personal quota
 - 🔍 **Semantic Search** — Vector embeddings for intelligent context retrieval
 - 🔒 **Secure Authentication** — Google OAuth via Supabase
 - ⚡ **Real-Time Streaming** — Modern chat experience with SSE
 - 🎨 **Beautiful UI** — Built with Next.js 16, Tailwind CSS & shadcn/ui
+- 📤 **Export Conversations** — Download chat history as JSON
 
 ---
 
@@ -28,9 +30,10 @@ Documents → Text Extraction → Chunking → Vector Embeddings →
 
 **Tech Stack:**
 - **Frontend:** Next.js 16 (App Router), React 19, TypeScript
-- **UI:** Tailwind CSS 4, shadcn/ui, Lucide Icons
-- **AI/ML:** Google Gemini Pro, LangChain, Custom Vector Store
-- **Auth:** Supabase (Google OAuth)
+- **UI:** Tailwind CSS 4, shadcn/ui, Lucide Icons, react-markdown
+- **AI/ML:** Google Gemini 2.5 Flash, LangChain, Custom Vector Store
+- **Auth:** Supabase (Google OAuth) with SSR support
+- **Notifications:** Sonner (toast notifications)
 - **Deployment:** Vercel-ready
 
 ---
@@ -100,11 +103,22 @@ npm run dev
 - Type your question in the chat input
 - SMEAI retrieves relevant context from your documents
 - Receives streaming AI responses grounded in your data
+- Press Enter to send, Shift+Enter for new line
 
 ### 4. Manage Documents
 - View uploaded documents with chunk counts
 - Delete documents with the ❌ icon
 - Maximum 2 documents to keep the system lightweight
+
+### 5. Custom API Key (Optional)
+- Click the "API key" button in the top navigation
+- Enter your own Gemini API key to use your personal quota
+- Key is stored locally and encoded for security
+- Remove it anytime to use the default server API key
+
+### 6. Export Conversations
+- Click "Export as JSON" to download your chat history
+- Includes messages, document count, and metadata
 
 ---
 
@@ -113,24 +127,30 @@ npm run dev
 ```
 smeai/
 ├── app/
-│   ├── (auth)/              # Authentication routes
-│   │   └── auth/callback/   # OAuth callback handler
-│   ├── (protected)/         # Protected routes
-│   │   └── chat/            # Chat interface
+│   ├── auth/
+│   │   └── callback/        # OAuth callback handler
+│   ├── chat/                # Chat interface (protected)
 │   ├── api/
 │   │   ├── chat/            # Streaming chat endpoint
-│   │   ├── documents/       # Document management
+│   │   ├── documents/       # Document management (GET/DELETE)
 │   │   └── upload/          # Document upload & ingestion
 │   ├── layout.tsx           # Root layout
 │   └── page.tsx             # Landing page
 ├── lib/
+│   ├── ai/
+│   │   └── gemini.ts        # Gemini AI configuration
 │   ├── rag/
 │   │   └── vector.ts        # Vector store & embeddings
 │   └── supabase/
-│       ├── client.ts        # Supabase client
-│       └── middleware.ts    # Auth middleware
+│       ├── client.ts        # Supabase client (browser)
+│       ├── server.ts        # Supabase server client
+│       └── proxy.ts         # Auth middleware/proxy
 ├── components/
+│   ├── common/
+│   │   └── TopNav.tsx       # Navigation component
+│   ├── Prism.tsx            # Animated background component
 │   └── ui/                  # shadcn/ui components
+├── proxy.ts                 # Next.js middleware entry
 ├── vector_store.json        # Persistent vector storage (gitignored)
 └── README.md
 ```
@@ -159,34 +179,33 @@ smeai/
 
 ### Query & Retrieval
 1. User asks a question
-2. Question is embedded
+2. Question is embedded using Gemini embeddings
 3. Semantic similarity search finds top 3 relevant chunks
-4. Context is injected into Gemini prompt
+4. Context is injected into Gemini 2.5 Flash prompt
 5. Gemini generates answer based on provided context
-6. Response streams to client in real-time
+6. Response streams to client in real-time via SSE
+7. Custom API keys are supported (stored in localStorage, encoded)
 
 ---
 
-## 🎨 UI Improvements & Branding
+## 🎨 UI Features
 
 ### Current Features
-- ✅ Clean, modern chat interface
-- ✅ Avatar-based message distinction
-- ✅ Markdown rendering for AI responses
-- ✅ Scrollable chat area with fixed input
-- ✅ Document upload with progress
-- ✅ Document management (view, delete)
+- ✅ Clean, modern chat interface with animated Prism background
+- ✅ SMEAI branding with Brain icon and glass-morphism navigation
+- ✅ Avatar-based message distinction (User/Bot)
+- ✅ Rich markdown rendering for AI responses (code blocks, lists, tables)
+- ✅ Auto-scrolling chat area with user scroll detection
+- ✅ Fixed input area at bottom
+- ✅ Document upload with progress indicators
+- ✅ Document management (view chunk counts, delete)
+- ✅ Toast notifications for all actions (Sonner)
 - ✅ Error handling and loading states
-
-### Planned Enhancements
-- 🎨 SMEAI logo and brand identity
-- 🌗 Dark mode toggle
-- 📊 Document upload analytics
-- 🔔 Toast notifications for actions
-- 📱 Mobile-responsive improvements
-- ⌨️ Keyboard shortcuts
-- 🎯 Better empty states
-- 🔍 Search within chat history (optional)
+- ✅ Empty state with example question prompt
+- ✅ Export conversation as JSON
+- ✅ Custom API key management dialog
+- ✅ Clear chat functionality
+- ✅ Mobile-responsive design
 
 ---
 
@@ -218,6 +237,8 @@ The `vercel.json` is configured to handle all routing correctly.
 ### Vector Store
 - **Storage:** File-based (`vector_store.json`)
 - **Persistence:** Survives server restarts
+- **Embeddings:** Gemini Embedding API (`gemini-embedding-001`)
+- **Similarity:** Cosine similarity calculation
 - **Scalability:** For production, migrate to Pinecone, Supabase Vector, or Weaviate
 
 ### Document Limits
@@ -228,7 +249,8 @@ The `vercel.json` is configured to handle all routing correctly.
 ### Chunking Strategy
 - **Chunk size:** 1000 characters
 - **Overlap:** 200 characters
-- **Splitter:** Recursive Character Text Splitter
+- **Splitter:** LangChain Recursive Character Text Splitter
+- **Metadata:** Each chunk tagged with document ID and filename
 
 ---
 
@@ -268,6 +290,10 @@ npx shadcn@latest add [component-name]
 - **Cause:** Missing routing configuration
 - **Fix:** Ensure `vercel.json` is present and configured correctly
 
+### Issue: Custom API key not working
+- **Cause:** API key not properly encoded or invalid
+- **Fix:** Check that the API key is valid and try saving it again. The key is base64 encoded in localStorage.
+
 ---
 
 ## 📝 License
@@ -278,10 +304,11 @@ MIT License - feel free to use this project for learning and production.
 
 ## 🙏 Acknowledgments
 
-- **Google Gemini** for powerful AI capabilities
-- **LangChain** for RAG tooling
-- **Supabase** for seamless authentication
-- **shadcn/ui** for beautiful components
+- **Google Gemini** for powerful AI capabilities (Gemini 2.5 Flash & Embeddings)
+- **LangChain** for RAG tooling and text splitting
+- **Supabase** for seamless authentication with SSR support
+- **shadcn/ui** for beautiful, accessible components
+- **Sonner** for elegant toast notifications
 - **Vercel** for effortless deployment
 
 ---
