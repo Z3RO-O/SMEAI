@@ -1,491 +1,179 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { User, Bot, Upload, Trash2, FileText, X } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Brain, FileText, Zap, Shield, ArrowRight, Sparkles } from "lucide-react";
 
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
-
-interface UploadedDocument {
-  id: string;
-  filename: string;
-  uploadedAt: string;
-  chunkCount: number;
-}
-
-export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
+export default function LandingPage() {
   const [isLoading, setIsLoading] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
-  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const supabase = createClient();
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const fetchDocuments = async () => {
-    try {
-      const response = await fetch("/api/documents");
-      if (response.ok) {
-        const data = await response.json();
-        console.log("Fetched documents:", data);
-        setDocuments(data.documents || []);
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        router.push("/chat");
       }
-    } catch (error) {
-      console.error("Error fetching documents:", error);
-    }
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  useEffect(() => {
-    fetchDocuments();
-  }, []);
-
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: Message = {
-      role: "user",
-      content: input.trim(),
     };
+    checkUser();
+  }, [router, supabase.auth]);
 
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
+  const handleGoogleSignIn = async () => {
     setIsLoading(true);
-
-    // Add empty assistant message that will be streamed into
-    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
-
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
         },
-        body: JSON.stringify({ message: userMessage.content }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMsg = errorData.error || "Failed to get response";
-        
-        // Show user-friendly message for quota errors
-        if (response.status === 429 || errorData.isQuotaError) {
-          throw new Error("⚠️ API Quota Exceeded\n\nYou've hit the rate limit for Google's Gemini API. This usually happens when you make too many requests in a short time.\n\nPlease wait a few moments and try again, or check your API quota at: https://ai.google.dev/gemini-api/docs/rate-limits");
-        }
-        
-        throw new Error(errorMsg);
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) {
-        throw new Error("No reader available");
-      }
-
-      let assistantContent = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.text) {
-                assistantContent += data.text;
-                // Update the last message (assistant message) with accumulated content
-                setMessages((prev) => {
-                  const newMessages = [...prev];
-                  newMessages[newMessages.length - 1] = {
-                    role: "assistant",
-                    content: assistantContent,
-                  };
-                  return newMessages;
-                });
-              }
-            } catch {
-              // Ignore parsing errors
-            }
-          }
-        }
+      if (error) {
+        toast.error("Authentication Failed", {
+          description: error.message || "Failed to sign in with Google",
+        });
+        throw error;
       }
     } catch (error) {
-      console.error("Error sending message:", error);
-      
-      // Try to get the error from the response if it's a fetch error
-      let errorMessage = "Sorry, I encountered an error. Please try again.";
-      
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      
-      setMessages((prev) => {
-        const newMessages = [...prev];
-        newMessages[newMessages.length - 1] = {
-          role: "assistant",
-          content: `${errorMessage}`,
-        };
-        return newMessages;
-      });
-    } finally {
+      console.error("Error signing in:", error);
       setIsLoading(false);
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Check file size (2MB limit)
-    const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB in bytes
-    if (file.size > MAX_FILE_SIZE) {
-      setUploadError(
-        `File size exceeds 2MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(2)}MB`
-      );
-      setTimeout(() => setUploadError(null), 5000);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-      return;
-    }
-
-    setIsUploading(true);
-    setUploadError(null);
-    setUploadSuccess(null);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        const errorMsg = errorData.error || "Failed to upload file";
-        
-        // Show user-friendly message for quota errors
-        if (response.status === 429 || errorData.isQuotaError) {
-          throw new Error("⚠️ API Quota Exceeded - You've hit the rate limit for Google's Gemini API embeddings. Please wait a few moments and try again.");
-        }
-        
-        throw new Error(errorMsg);
-      }
-
-      const result = await response.json();
-      setUploadSuccess(result.message || "File uploaded successfully!");
-      
-      // Refresh documents list
-      await fetchDocuments();
-      
-      // Clear success message after 5 seconds
-      setTimeout(() => setUploadSuccess(null), 5000);
-    } catch (error) {
-      console.error("Error uploading file:", error);
-      setUploadError(
-        error instanceof Error ? error.message : "Failed to upload file"
-      );
-      // Clear error message after 10 seconds for quota errors (longer message)
-      const timeout = error instanceof Error && error.message.includes("Quota") ? 10000 : 5000;
-      setTimeout(() => setUploadError(null), timeout);
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  };
-
-  const handleDeleteDocument = async (docId: string) => {
-    try {
-      const response = await fetch(`/api/documents?id=${docId}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete document");
-      }
-
-      // Refresh documents list
-      await fetchDocuments();
-      setUploadSuccess("Document deleted successfully!");
-      setTimeout(() => setUploadSuccess(null), 3000);
-    } catch (error) {
-      console.error("Error deleting document:", error);
-      setUploadError(
-        error instanceof Error ? error.message : "Failed to delete document"
-      );
-      setTimeout(() => setUploadError(null), 5000);
-    }
-  };
-
-  const handleClearChat = () => {
-    setMessages([]);
-    setInput("");
-  };
-
   return (
-    <main className="flex h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-2xl p-4 flex flex-col h-[600px] overflow-hidden">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".txt,.json,.md,.pdf"
-              onChange={handleFileUpload}
-              className="hidden"
-              id="file-upload"
-              disabled={isUploading || documents.length >= 2}
-            />
-            <label htmlFor="file-upload">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={isUploading || documents.length >= 2}
-                className="cursor-pointer"
-                asChild
-                title={documents.length >= 2 ? "Maximum 2 documents allowed" : "Upload document (max 2MB)"}
-              >
-                <span>
-                  <Upload className="size-4 mr-2" />
-                  {isUploading ? "Uploading..." : documents.length >= 2 ? "Max 2 docs" : "Upload"}
-                </span>
-              </Button>
-            </label>
-            {messages.length > 0 && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleClearChat}
-                disabled={isLoading}
-              >
-                <Trash2 className="size-4 mr-2" />
-                Clear
-              </Button>
-            )}
-          </div>
-        </div>
-        
-        {/* Uploaded Documents Section */}
-        <div className="mb-2 border rounded-md p-2 bg-muted/30">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-medium text-muted-foreground">
-              Uploaded Documents ({documents.length}/2)
-            </span>
-          </div>
-          {documents.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {documents.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="flex items-center gap-2 bg-background px-3 py-1.5 rounded-md text-sm border"
-                >
-                  <FileText className="size-3.5" />
-                  <span className="max-w-[150px] truncate">{doc.filename}</span>
-                  <span className="text-xs text-muted-foreground">
-                    ({doc.chunkCount} chunks)
-                  </span>
-                  <button
-                    onClick={() => handleDeleteDocument(doc.id)}
-                    className="ml-1 hover:text-destructive transition-colors"
-                    title="Delete document"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground text-center py-2">
-              No documents uploaded yet. Upload a document to get started.
-            </p>
-          )}
-        </div>
-        
-        {(uploadError || uploadSuccess) && (
-          <div
-            className={`mb-2 p-2 rounded-md text-sm ${
-              uploadError
-                ? "bg-destructive/10 text-destructive"
-                : "bg-green-500/10 text-green-600 dark:text-green-400"
-            }`}
-          >
-            {uploadError || uploadSuccess}
-          </div>
-        )}
-        <ScrollArea className="flex-1 min-h-0 mb-4 border rounded-md">
-          <div className="p-4 space-y-4">
-            {messages.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8">
-                Start a conversation by typing a message below
+    <div className="min-h-screen bg-white dark:bg-black">
+      {/* Navigation */}
+      <nav className="border-b bg-white dark:bg-black">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="size-10 rounded-lg bg-black dark:bg-white flex items-center justify-center">
+                <Brain className="size-6 text-white dark:text-black" />
               </div>
-            ) : (
-              messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={`flex gap-3 ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  {message.role === "assistant" && (
-                    <Avatar className="size-8">
-                      <AvatarFallback className="bg-muted text-muted-foreground">
-                        <Bot className="size-4" />
-                      </AvatarFallback>
-                    </Avatar>
-                  )}
-                  <div
-                    className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                      message.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
-                    }`}
-                  >
-                    {message.content ? (
-                      message.role === "assistant" ? (
-                        <div className="prose prose-sm dark:prose-invert max-w-none break-words">
-                          <ReactMarkdown
-                            components={{
-                              p: ({ children }) => (
-                                <p className="mb-2 last:mb-0">{children}</p>
-                              ),
-                              ul: ({ children }) => (
-                                <ul className="mb-2 ml-4 list-disc last:mb-0">
-                                  {children}
-                                </ul>
-                              ),
-                              ol: ({ children }) => (
-                                <ol className="mb-2 ml-4 list-decimal last:mb-0">
-                                  {children}
-                                </ol>
-                              ),
-                              li: ({ children }) => (
-                                <li className="mb-1">{children}</li>
-                              ),
-                              code: ({ children, className }) => {
-                                const isInline = !className;
-                                return isInline ? (
-                                  <code className="bg-muted-foreground/20 px-1 py-0.5 rounded text-sm">
-                                    {children}
-                                  </code>
-                                ) : (
-                                  <code className="block bg-muted-foreground/20 p-2 rounded text-sm overflow-x-auto">
-                                    {children}
-                                  </code>
-                                );
-                              },
-                              pre: ({ children }) => (
-                                <pre className="mb-2 last:mb-0 overflow-x-auto">
-                                  {children}
-                                </pre>
-                              ),
-                              h1: ({ children }) => (
-                                <h1 className="text-xl font-bold mb-2 mt-4 first:mt-0">
-                                  {children}
-                                </h1>
-                              ),
-                              h2: ({ children }) => (
-                                <h2 className="text-lg font-bold mb-2 mt-4 first:mt-0">
-                                  {children}
-                                </h2>
-                              ),
-                              h3: ({ children }) => (
-                                <h3 className="text-base font-bold mb-2 mt-4 first:mt-0">
-                                  {children}
-                                </h3>
-                              ),
-                              blockquote: ({ children }) => (
-                                <blockquote className="border-l-4 border-muted-foreground/30 pl-4 italic mb-2">
-                                  {children}
-                                </blockquote>
-                              ),
-                              a: ({ children, href }) => (
-                                <a
-                                  href={href}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary underline"
-                                >
-                                  {children}
-                                </a>
-                              ),
-                            }}
-                          >
-                            {message.content}
-                          </ReactMarkdown>
-                        </div>
-                      ) : (
-                        <div className="whitespace-pre-wrap break-words">
-                          {message.content}
-                        </div>
-                      )
-                    ) : (
-                      <span className="text-muted-foreground animate-pulse">
-                        Thinking...
-                      </span>
-                    )}
-                  </div>
-                  {message.role === "user" && (
-                    <Avatar className="size-8">
-                      <AvatarFallback className="bg-primary text-primary-foreground">
-                        <User className="size-4" />
-                      </AvatarFallback>
-                    </Avatar>
-                  )}
-                </div>
-              ))
-            )}
-            <div ref={messagesEndRef} />
+              <div>
+                <h1 className="text-xl font-bold text-black dark:text-white">
+                  SMEAI
+                </h1>
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Subject Matter Expert AI
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+              className="bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200"
+            >
+              {isLoading ? "Loading..." : "Sign In"}
+            </Button>
           </div>
-        </ScrollArea>
-        <div className="flex gap-2">
-          <Input
-            placeholder="Ask something..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={isLoading}
-          />
-          <Button onClick={handleSend} disabled={isLoading || !input.trim()}>
-            {isLoading ? "Sending..." : "Send"}
-          </Button>
         </div>
-      </Card>
-    </main>
+      </nav>
+
+      {/* Hero Section */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div className="text-center mb-16">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm font-medium mb-6 border border-gray-200 dark:border-gray-800">
+            <Sparkles className="size-4" />
+            <span>Powered by Google Gemini & RAG Technology</span>
+          </div>
+          
+          <h1 className="text-5xl sm:text-6xl font-bold mb-6 text-black dark:text-white">
+            Your AI-Powered
+            <br />
+            Subject Matter Expert
+          </h1>
+          
+          <p className="text-xl text-gray-600 dark:text-gray-400 max-w-2xl mx-auto mb-8">
+            Transform your documents into expert knowledge. Upload, ask, and get
+            intelligent answers grounded in your data.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <Button
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+              size="lg"
+              className="bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200 text-lg px-8 py-6"
+            >
+              {isLoading ? (
+                "Loading..."
+              ) : (
+                <>
+                  <svg className="size-5 mr-2" viewBox="0 0 24 24">
+                    <path
+                      fill="currentColor"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="currentColor"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="currentColor"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                    />
+                    <path
+                      fill="currentColor"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                    />
+                  </svg>
+                  Sign in with Google
+                  <ArrowRight className="size-5 ml-2" />
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Features Grid */}
+        <div className="grid md:grid-cols-3 gap-8 mt-20">
+          <Card className="p-6 hover:shadow-lg transition-shadow border border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
+            <div className="size-12 rounded-lg bg-black dark:bg-white flex items-center justify-center mb-4">
+              <FileText className="size-6 text-white dark:text-black" />
+            </div>
+            <h3 className="text-xl font-semibold mb-2 text-black dark:text-white">Document-Based RAG</h3>
+            <p className="text-gray-600 dark:text-gray-400">
+              Upload your PDFs, text files, and documents. SMEAI extracts,
+              chunks, and vectorizes them for intelligent retrieval.
+            </p>
+          </Card>
+
+          <Card className="p-6 hover:shadow-lg transition-shadow border border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
+            <div className="size-12 rounded-lg bg-black dark:bg-white flex items-center justify-center mb-4">
+              <Zap className="size-6 text-white dark:text-black" />
+            </div>
+            <h3 className="text-xl font-semibold mb-2 text-black dark:text-white">Real-Time Streaming</h3>
+            <p className="text-gray-600 dark:text-gray-400">
+              Experience modern AI chat with streaming responses. Get answers as
+              they&apos;re generated, just like ChatGPT.
+            </p>
+          </Card>
+
+          <Card className="p-6 hover:shadow-lg transition-shadow border border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
+            <div className="size-12 rounded-lg bg-black dark:bg-white flex items-center justify-center mb-4">
+              <Shield className="size-6 text-white dark:text-black" />
+            </div>
+            <h3 className="text-xl font-semibold mb-2 text-black dark:text-white">Secure & Private</h3>
+            <p className="text-gray-600 dark:text-gray-400">
+              Your data stays secure with Google OAuth authentication. Documents
+              are processed locally and stored safely.
+            </p>
+          </Card>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <footer className="fixed bottom-0 w-full border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-black p-4">
+        <div className="text-center text-gray-600 dark:text-gray-400">
+          SMEAI - Built with ❤️
+        </div>
+      </footer>
+    </div>
   );
 }

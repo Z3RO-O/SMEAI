@@ -1,6 +1,18 @@
 {
   "name": "smeai",
+  "description": "Subject Matter Expert AI - RAG-powered document intelligence built with Next.js & Gemini",
   "version": "0.1.0",
+  "author": "Z3RO-O",
+  "keywords": [
+    "ai",
+    "rag",
+    "gemini",
+    "nextjs",
+    "supabase",
+    "chatbot",
+    "document-intelligence",
+    "vector-search"
+  ],
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -17,16 +29,20 @@
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-slot": "^1.2.4",
+    "@supabase/ssr": "^0.8.0",
+    "@supabase/supabase-js": "^2.89.0",
     "chromadb": "^3.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "langchain": "^1.2.3",
     "lucide-react": "^0.562.0",
     "next": "16.1.1",
+    "next-themes": "^0.4.6",
     "postcss": "^8.5.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-markdown": "^10.1.0",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
