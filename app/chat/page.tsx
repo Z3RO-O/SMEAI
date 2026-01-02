@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
@@ -10,8 +10,18 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { User, Bot, Upload, Trash2, FileText, X, LogOut, MessageSquare, Sparkles } from "lucide-react";
+import { User, Bot, Upload, Trash2, FileText, X, MessageSquare, Sparkles, Download, Key } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { TopNav } from "@/components/common/TopNav";
 
 interface Message {
   role: "user" | "assistant";
@@ -33,10 +43,29 @@ export default function ChatPage() {
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
   const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   const [userEmail, setUserEmail] = useState<string>("");
+  const [isApiKeyDialogOpen, setIsApiKeyDialogOpen] = useState(false);
+  const [apiKey, setApiKey] = useState<string>("");
+  const [hasApiKey, setHasApiKey] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollViewportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const userHasScrolledRef = useRef(false);
   const router = useRouter();
   const supabase = createClient();
+
+  // Load API key from localStorage on mount
+  useEffect(() => {
+    const storedKey = localStorage.getItem("gemini_api_key");
+    if (storedKey) {
+      try {
+        const decoded = atob(storedKey);
+        setApiKey(decoded);
+        setHasApiKey(true);
+      } catch (e) {
+        console.error("Failed to decode API key:", e);
+      }
+    }
+  }, []);
 
   // Check auth and get user
   useEffect(() => {
@@ -56,12 +85,96 @@ export default function ChatPage() {
     fetchDocuments();
   }, []);
 
+  // Check if user is near bottom of scroll area
+  const isNearBottom = useCallback(() => {
+    const scrollElement = scrollViewportRef.current || scrollRef.current;
+    if (!scrollElement) return true; // If no scroll element found, assume we should scroll
+    const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+    const threshold = 100; // pixels from bottom
+    return scrollHeight - scrollTop - clientHeight < threshold;
+  }, []);
+
   // Auto-scroll to bottom
+  const scrollToBottom = useCallback((force = false) => {
+    // Use requestAnimationFrame to ensure DOM has updated
+    requestAnimationFrame(() => {
+      // Try to find viewport if not already set
+      if (!scrollViewportRef.current) {
+        const scrollArea = document.querySelector('[data-slot="scroll-area"]');
+        const viewport = scrollArea?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement;
+        if (viewport) {
+          scrollViewportRef.current = viewport;
+        }
+      }
+      
+      // Try viewport first, fallback to inner div if viewport not found
+      const scrollElement = scrollViewportRef.current || scrollRef.current;
+      if (!scrollElement) return;
+      
+      // Only auto-scroll if user is near bottom or if forced (e.g., when sending message)
+      if (force) {
+        // Force scroll - always scroll when forced
+        scrollElement.scrollTo({
+          top: scrollElement.scrollHeight,
+          behavior: 'smooth',
+        });
+        userHasScrolledRef.current = false;
+      } else if (isNearBottom()) {
+        // Auto-scroll only if user is near bottom
+        scrollElement.scrollTo({
+          top: scrollElement.scrollHeight,
+          behavior: 'auto', // Use 'auto' during streaming for better performance
+        });
+        userHasScrolledRef.current = false;
+      }
+    });
+  }, [isNearBottom]);
+
+  // Find and attach to ScrollArea viewport
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+    const findViewport = () => {
+      // Try to find the viewport - look for the one in the chat messages area
+      const scrollArea = document.querySelector('[data-slot="scroll-area"]');
+      const viewport = scrollArea?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement;
+      if (viewport) {
+        scrollViewportRef.current = viewport;
+      }
+    };
+    
+    // Try immediately and also after delays to ensure it's found
+    findViewport();
+    const timeoutId1 = setTimeout(findViewport, 100);
+    const timeoutId2 = setTimeout(findViewport, 500);
+    return () => {
+      clearTimeout(timeoutId1);
+      clearTimeout(timeoutId2);
+    };
+  }, [messages.length]); // Re-run when messages change to ensure viewport is found
+
+  // Handle scroll events to detect user interaction
+  useEffect(() => {
+    const scrollElement = scrollViewportRef.current || scrollRef.current;
+    if (!scrollElement) return;
+
+    const handleScroll = () => {
+      // If user scrolls up significantly, mark that they've scrolled
+      if (!isNearBottom()) {
+        userHasScrolledRef.current = true;
+      }
+    };
+
+    scrollElement.addEventListener('scroll', handleScroll);
+    return () => scrollElement.removeEventListener('scroll', handleScroll);
+  }, [isNearBottom]);
+
+  // Auto-scroll when messages change (but respect user scroll)
+  useEffect(() => {
+    // Small delay to ensure DOM has updated
+    const timeoutId = setTimeout(() => {
+      scrollToBottom(false);
+    }, 100);
+    return () => clearTimeout(timeoutId);
+  }, [messages, scrollToBottom]);
 
   const fetchDocuments = async () => {
     setIsLoadingDocuments(true);
@@ -85,12 +198,29 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
+    
+    // Force scroll to bottom when user sends a message
+    setTimeout(() => scrollToBottom(true), 100);
 
     try {
+      // Get API key from localStorage if available
+      const storedKey = localStorage.getItem("gemini_api_key");
+      let customApiKey = null;
+      if (storedKey) {
+        try {
+          customApiKey = atob(storedKey);
+        } catch (e) {
+          console.error("Failed to decode API key:", e);
+        }
+      }
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ 
+          message: input,
+          apiKey: customApiKey,
+        }),
       });
 
       if (!response.ok) {
@@ -117,6 +247,9 @@ export default function ChatPage() {
         { role: "assistant", content: "" },
       ]);
 
+      // Force scroll when assistant message starts
+      setTimeout(() => scrollToBottom(true), 150);
+
       while (reader) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -140,6 +273,8 @@ export default function ChatPage() {
                 newMessages[newMessages.length - 1].content = assistantMessage;
                 return newMessages;
               });
+              // Auto-scroll during streaming (respects user scroll)
+              scrollToBottom(false);
             } catch {
               // If parsing fails, treat as plain text (fallback)
               assistantMessage += data;
@@ -148,6 +283,8 @@ export default function ChatPage() {
                 newMessages[newMessages.length - 1].content = assistantMessage;
                 return newMessages;
               });
+              // Auto-scroll during streaming (respects user scroll)
+              scrollToBottom(false);
             }
           }
         }
@@ -272,44 +409,87 @@ export default function ChatPage() {
     router.push("/");
   };
 
+  const handleExportConversation = () => {
+    if (messages.length === 0) {
+      toast.error("No messages to export", {
+        description: "Start a conversation first",
+      });
+      return;
+    }
+
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      messages: messages,
+      documentCount: documents.length,
+      documents: documents.map(doc => ({
+        filename: doc.filename,
+        chunkCount: doc.chunkCount,
+      })),
+    };
+
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `smeai-conversation-${new Date().toISOString().split("T")[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toast.success("Conversation exported", {
+      description: "Your conversation has been saved as JSON",
+    });
+  };
+
+  const handleSaveApiKey = () => {
+    if (!apiKey.trim()) {
+      toast.error("API Key Required", {
+        description: "Please enter your Gemini API key",
+      });
+      return;
+    }
+
+    try {
+      // Encode API key to base64 before storing
+      const encoded = btoa(apiKey.trim());
+      localStorage.setItem("gemini_api_key", encoded);
+      setHasApiKey(true);
+      setIsApiKeyDialogOpen(false);
+      toast.success("API Key Saved", {
+        description: "Your API key has been saved securely",
+      });
+    } catch {
+      toast.error("Failed to save API key", {
+        description: "Please try again",
+      });
+    }
+  };
+
+  const handleRemoveApiKey = () => {
+    localStorage.removeItem("gemini_api_key");
+    setApiKey("");
+    setHasApiKey(false);
+    setIsApiKeyDialogOpen(false);
+    toast.success("API Key Removed", {
+      description: "Using default API key",
+    });
+  };
+
   return (
-    <div className="flex flex-col min-h-screen bg-white dark:bg-black">
-      {/* Fixed Header */}
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="size-10 rounded-lg bg-black dark:bg-white flex items-center justify-center">
-                <Bot className="size-6 text-white dark:text-black" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-black dark:text-white">
-                  SMEAI
-                </h1>
-                <p className="text-xs text-gray-600 dark:text-gray-400">
-                  Subject Matter Expert AI
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-600 dark:text-gray-400">{userEmail}</span>
-              <Button
-                onClick={handleSignOut}
-                variant="ghost"
-                size="sm"
-                className="text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-900"
-              >
-                <LogOut className="size-4 mr-2" />
-                Sign Out
-              </Button>
-            </div>
-          </div>
-        </div>
-      </nav>
+    <div className="flex flex-col h-screen bg-black relative overflow-hidden">
+      {/* Floating Glass-like Navigation */}
+      <TopNav 
+        variant="chat"
+        userEmail={userEmail}
+        onApiKeyClick={() => setIsApiKeyDialogOpen(true)}
+        onSignOut={handleSignOut}
+      />
 
       {/* Main Content */}
-      <div className="flex-1 flex items-center justify-center pt-20 pb-4 px-4">
-        <Card className="w-full max-w-4xl h-[calc(100vh-7rem)] flex flex-col shadow-lg border border-gray-200 dark:border-gray-800">
+      <div className="flex-1 flex items-center justify-center pt-24 pb-4 px-4 overflow-hidden min-h-0">
+        <Card className="w-full max-w-4xl h-[calc(100vh-8rem)] flex flex-col shadow-lg border border-gray-200">
           {/* Content Section */}
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="px-4 border-b border-border">
@@ -319,6 +499,17 @@ export default function ChatPage() {
                 <span className="text-xs font-medium text-muted-foreground">
                   Uploaded Documents ({documents.length}/2)
                 </span>
+                <Button
+                  onClick={handleExportConversation}
+                  variant="ghost"
+                  size="sm"
+                  disabled={messages.length === 0}
+                  className="h-7 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  title={messages.length === 0 ? "No messages to export" : "Export conversation"}
+                >
+                  <Download className="size-3.5 mr-1.5" />
+                  Export as JSON
+                </Button>
               </div>
               {isLoadingDocuments ? (
                 <div className="flex flex-wrap gap-2">
@@ -526,7 +717,7 @@ export default function ChatPage() {
             </ScrollArea>
 
             {/* Input Area - Fixed to bottom */}
-            <div className="flex gap-2 p-6 pb-0 border-t border-border bg-card">
+            <div className="flex gap-2 p-6 pb-1 border-t border-border bg-card">
             <input
               type="file"
               ref={fileInputRef}
@@ -571,6 +762,71 @@ export default function ChatPage() {
           </div>
         </Card>
       </div>
+
+      {/* API Key Dialog */}
+      <Dialog open={isApiKeyDialogOpen} onOpenChange={setIsApiKeyDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="size-5" />
+              API Key
+            </DialogTitle>
+            <DialogDescription>
+              Enter your Google Gemini API key to use your own quota. The key is stored locally and encoded for security.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="api-key" className="text-sm font-medium">
+                Gemini API Key
+              </label>
+              <Textarea
+                id="api-key"
+                placeholder="Enter your API key here..."
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                className="font-mono text-sm"
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">
+                Get your API key from{" "}
+                <a
+                  href="https://ai.google.dev/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline hover:text-primary/80"
+                >
+                  Google AI Studio
+                </a>
+              </p>
+            </div>
+            {hasApiKey && (
+              <div className="rounded-md bg-muted p-3">
+                <p className="text-xs text-muted-foreground">
+                  ✓ API key is currently saved
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            {hasApiKey && (
+              <Button
+                variant="outline"
+                onClick={handleRemoveApiKey}
+                className="mr-auto"
+              >
+                Remove API Key
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setIsApiKeyDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveApiKey}>
+              Save API Key
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

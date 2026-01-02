@@ -1,12 +1,11 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import { geminiModel } from "@/lib/ai/gemini";
 import { getVectorStore } from "@/lib/rag/vector";
 
 export async function POST(req: Request) {
   try {
-    const { message } = await req.json();
+    const { message, apiKey } = await req.json();
 
     if (!message) {
       return NextResponse.json(
@@ -16,6 +15,22 @@ export async function POST(req: Request) {
     }
 
     console.log("Received message:", message);
+
+    // Use custom API key if provided, otherwise use default
+    const { GoogleGenerativeAI } = await import("@google/generative-ai");
+    const apiKeyToUse = apiKey || process.env.GEMINI_API_KEY;
+    
+    if (!apiKeyToUse) {
+      return NextResponse.json(
+        { error: "API key is required. Please set GEMINI_API_KEY environment variable or provide a custom API key." },
+        { status: 500 }
+      );
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKeyToUse);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+    });
 
     // Get vector store and retrieve relevant documents
     const vectorStore = await getVectorStore();
@@ -44,7 +59,7 @@ Answer:`
       : message;
 
     console.log("Generating content with Gemini...");
-    const result = await geminiModel.generateContentStream(prompt);
+    const result = await model.generateContentStream(prompt);
 
     const stream = new ReadableStream({
       async start(controller) {

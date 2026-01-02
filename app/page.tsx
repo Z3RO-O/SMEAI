@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Brain, FileText, Zap, Shield, ArrowRight, Sparkles } from "lucide-react";
+import Prism from "@/components/Prism";
+import { TopNav } from "@/components/common/TopNav";
 
 export default function LandingPage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -46,60 +46,50 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black">
-      {/* Navigation */}
-      <nav className="border-b bg-white dark:bg-black">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="size-10 rounded-lg bg-black dark:bg-white flex items-center justify-center">
-                <Brain className="size-6 text-white dark:text-black" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-black dark:text-white">
-                  SMEAI
-                </h1>
-                <p className="text-xs text-gray-600 dark:text-gray-400">
-                  Subject Matter Expert AI
-                </p>
-              </div>
-            </div>
-            <Button
-              onClick={handleGoogleSignIn}
-              disabled={isLoading}
-              className="bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200"
-            >
-              {isLoading ? "Loading..." : "Sign In"}
-            </Button>
-          </div>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-black relative overflow-hidden">
+      {/* Prism Background */}
+      <div className="fixed inset-0 w-full h-full z-0">
+        <Prism
+          animationType="rotate"
+          timeScale={0.4}
+          height={3.5}
+          baseWidth={5.5}
+          scale={3.6}
+          hueShift={0}
+          colorFrequency={1}
+          noise={0}
+          glow={1}
+        />
+      </div>
+
+      {/* Floating Glass-like Navigation */}
+      <TopNav variant="landing" />
 
       {/* Hero Section */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="text-center mb-16">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 text-sm font-medium mb-6 border border-gray-200 dark:border-gray-800">
-            <Sparkles className="size-4" />
-            <span>Powered by Google Gemini & RAG Technology</span>
+      <div className="relative z-10 min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8">
+        <div className="text-center max-w-3xl mx-auto">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white text-sm font-medium mb-8">
+            <span>✦ Powered by Gemini API Key ✦</span>
           </div>
           
-          <h1 className="text-5xl sm:text-6xl font-bold mb-6 text-black dark:text-white">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6 text-white">
             Your AI-Powered
             <br />
             Subject Matter Expert
           </h1>
           
-          <p className="text-xl text-gray-600 dark:text-gray-400 max-w-2xl mx-auto mb-8">
-            Transform your documents into expert knowledge. Upload, ask, and get
-            intelligent answers grounded in your data.
+          <p className="text-xl sm:text-2xl text-white/80 max-w-2xl mx-auto mb-12 leading-relaxed">
+            Transform your documents into expert knowledge. 
+            <br />
+            Upload, ask, and get intelligent answers grounded in your data.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+          <div className="flex justify-center">
             <Button
               onClick={handleGoogleSignIn}
               disabled={isLoading}
               size="lg"
-              className="bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200 text-lg px-8 py-6"
+              className="rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white hover:bg-white/20 text-lg px-8 py-6"
             >
               {isLoading ? (
                 "Loading..."
@@ -124,56 +114,12 @@ export default function LandingPage() {
                     />
                   </svg>
                   Sign in with Google
-                  <ArrowRight className="size-5 ml-2" />
                 </>
               )}
             </Button>
           </div>
         </div>
-
-        {/* Features Grid */}
-        <div className="grid md:grid-cols-3 gap-8 mt-20">
-          <Card className="p-6 hover:shadow-lg transition-shadow border border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
-            <div className="size-12 rounded-lg bg-black dark:bg-white flex items-center justify-center mb-4">
-              <FileText className="size-6 text-white dark:text-black" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2 text-black dark:text-white">Document-Based RAG</h3>
-            <p className="text-gray-600 dark:text-gray-400">
-              Upload your PDFs, text files, and documents. SMEAI extracts,
-              chunks, and vectorizes them for intelligent retrieval.
-            </p>
-          </Card>
-
-          <Card className="p-6 hover:shadow-lg transition-shadow border border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
-            <div className="size-12 rounded-lg bg-black dark:bg-white flex items-center justify-center mb-4">
-              <Zap className="size-6 text-white dark:text-black" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2 text-black dark:text-white">Real-Time Streaming</h3>
-            <p className="text-gray-600 dark:text-gray-400">
-              Experience modern AI chat with streaming responses. Get answers as
-              they&apos;re generated, just like ChatGPT.
-            </p>
-          </Card>
-
-          <Card className="p-6 hover:shadow-lg transition-shadow border border-gray-200 dark:border-gray-800 bg-white dark:bg-black">
-            <div className="size-12 rounded-lg bg-black dark:bg-white flex items-center justify-center mb-4">
-              <Shield className="size-6 text-white dark:text-black" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2 text-black dark:text-white">Secure & Private</h3>
-            <p className="text-gray-600 dark:text-gray-400">
-              Your data stays secure with Google OAuth authentication. Documents
-              are processed locally and stored safely.
-            </p>
-          </Card>
-        </div>
       </div>
-
-      {/* Footer */}
-      <footer className="fixed bottom-0 w-full border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-black p-4">
-        <div className="text-center text-gray-600 dark:text-gray-400">
-          SMEAI - Built with ❤️
-        </div>
-      </footer>
     </div>
   );
 }
