@@ -1,7 +1,11 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
-export const geminiModel = genAI.getGenerativeModel({
-  model: "gemini-2.5-flash",
-});
+export const model = (apiKey: string) => { 
+  return new ChatGoogleGenerativeAI({
+    model: "gemini-2.5-flash-lite",
+    apiKey: apiKey,
+    temperature: 0,
+    maxRetries: 2,
+  });
+};

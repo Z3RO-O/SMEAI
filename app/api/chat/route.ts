@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
+import { model } from "@/lib/ai/gemini";
 import { getVectorStore } from "@/lib/rag/vector";
 
 export async function POST(req: Request) {
@@ -17,7 +18,6 @@ export async function POST(req: Request) {
     console.log("Received message:", message);
 
     // Use custom API key if provided, otherwise use default
-    const { GoogleGenerativeAI } = await import("@google/generative-ai");
     const apiKeyToUse = apiKey || process.env.GEMINI_API_KEY;
     
     if (!apiKeyToUse) {
@@ -27,10 +27,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const genAI = new GoogleGenerativeAI(apiKeyToUse);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-    });
+    const geminiModel = model(apiKeyToUse);
 
     // Get vector store and retrieve relevant documents
     const vectorStore = await getVectorStore();
@@ -59,15 +56,15 @@ Answer:`
       : message;
 
     console.log("Generating content with Gemini...");
-    const result = await model.generateContentStream(prompt);
+    const result = await geminiModel.stream(prompt);
 
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
         
         try {
-          for await (const chunk of result.stream) {
-            const text = chunk.text();
+          for await (const chunk of result) {
+            const text = chunk.content;
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
           }
           console.log("Stream completed");
