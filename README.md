@@ -16,7 +16,6 @@ SMEAI transforms your documents into an AI-powered subject matter expert. Upload
 - 🔍 **Semantic Search** — Vector embeddings for intelligent context retrieval
 - 🔒 **Secure Authentication** — Google OAuth via Supabase
 - ⚡ **Real-Time Streaming** — Modern chat experience with SSE
-- 🎨 **Beautiful UI** — Built with Next.js 16, Tailwind CSS & shadcn/ui
 - 📤 **Export Conversations** — Download chat history as JSON
 
 ---
